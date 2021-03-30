@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!--
+ Copyright (c) 2020 SAP SE or an SAP affiliate company. All rights reserved.
+-->
+<!--
+	ATTENTION: This is just an example file. You have to edit it according to your needs.
+-->
+
+<items 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+			xsi:noNamespaceSchemaLocation="items.xsd">
+
+	<itemtypes>
+		<itemtype code="RedisCartMetadata">
+			<deployment table="rediscartmetadata" typecode="29000"/>
+			<attributes>
+				<attribute qualifier="cartPk" type="java.lang.String">
+					<description>The Redis Cart PK</description>
+					<modifiers initial="true" unique="true"/>
+					<persistence type="property"/>
+				</attribute>
+				<attribute qualifier="code" type="java.lang.String">
+					<description>The Redis Cart Code</description>
+					<persistence type="property"/>
+				</attribute>
+				<attribute qualifier="guid" type="java.lang.String">
+					<description>The Redis Cart GUID</description>
+					<persistence type="property"/>
+				</attribute>
+				<attribute qualifier="user" type="User">
+					<description>The Redis Cart User</description>
+               <persistence type="property"/>
+				</attribute>
+				<attribute qualifier="site" type="BaseSite">
+					<description>The Redis Cart Site</description>
+					<persistence type="property"/>
+				</attribute>
+				<attribute qualifier="saveTime" type="java.util.Date">
+					<description>The date/time when the cart was saved.</description>
+					<persistence type="property" />
+				</attribute>
+				<attribute qualifier="savedBy" type="User">
+					<description>The user who saved the cart.</description>
+					<persistence type="property" />
+				</attribute>
+				<attribute qualifier="quoteReference" type="Quote">
+					<description>The reference to quote from which the cart was created.</description>
+					<persistence type="property" />
+				</attribute>
+				<attribute qualifier="expirationTime" type="java.util.Date">
+					<description>The date/time when the order will expire</description>
+					<persistence type="property"/>
+				</attribute>
+				<attribute qualifier="visible" type="java.lang.Boolean">
+					<description>set the status of the cart visible</description>
+					<persistence type="property"/>
+					<defaultvalue>true</defaultvalue>
+				</attribute>
+				<attribute qualifier="status" type="OrderStatus">
+					<description>set the status of the cart</description>
+					<persistence type="property"/>
+				</attribute>
+			</attributes>
+			<indexes>
+				<index name="idxcartPk" unique="true">
+					<key attribute="cartPk"/>
+				</index>
+				<index name="idxcode">
+					<key attribute="code"/>
+				</index>
+				<index name="idxguid">
+					<key attribute="guid"/>
+				</index>
+				<index name="idxuserPk">
+					<key attribute="user"/>
+				</index>
+				<index name="idxsitePk">
+					<key attribute="site"/>
+				</index>
+				<index name="cartMetaSelectionIndex">
+					<key attribute="user"/>
+					<key attribute="site"/>
+					<key attribute="saveTime"/>
+					<key attribute="modifiedtime"/>
+				</index>
+			</indexes>
+		</itemtype>
+	</itemtypes>
+</items>

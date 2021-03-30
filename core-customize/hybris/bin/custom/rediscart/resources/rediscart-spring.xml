@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ [y] SAP Commerce Platform
+  ~
+  ~  Copyright (c) 2000-2020 SAP SE. All rights reserved.
+  ~
+  ~  This software is the confidential and proprietary information of SAP
+  ~  Customer Experience ("Confidential Information"). You shall not disclose such
+  ~  Confidential Information and shall use it only in accordance with the
+  ~  terms of the license agreement you entered into with SAP Customer Experience.
+  -->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:p="http://www.springframework.org/schema/p"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/util
+           http://www.springframework.org/schema/util/spring-util.xsd
+           http://www.springframework.org/schema/aop
+           http://www.springframework.org/schema/aop/spring-aop.xsd">
+
+    <bean id="polyglotRepositoriesConfigProvider" class="de.hybris.platform.persistence.polyglot.config.supplier.RedisCartPolyglotRepositoriesConfigProvider">
+        <constructor-arg name="modelService" ref="modelService" />
+        <constructor-arg name="typeService" ref="typeService" />
+        <constructor-arg name="configurationService" ref="configurationService" />
+    </bean>
+
+    <alias name="unitOfWorkAwareItemStateRepository" alias="documentCartRepository"/>
+
+    <bean id="unitOfWorkAwareItemStateRepository" class="de.hybris.platform.persistence.polyglot.uow.UnitOfWorkAwareItemStateRepository">
+        <constructor-arg ref="instrumentedDocumentCartRepository"/>
+        <constructor-arg ref="unitOfWorkProvider" />
+    </bean>
+
+    <bean id="defaultDocumentCartRepository"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.Repository">
+        <constructor-arg ref="cartQueryFactory"/>
+        <constructor-arg ref="cachedDocumentStorage"/>
+    </bean>
+
+    <bean id="instrumentedDocumentCartRepository"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.InstrumentedItemStateRepository">
+        <constructor-arg value="documentCartRepository"/>
+        <constructor-arg ref="defaultDocumentCartRepository"/>
+        <constructor-arg ref="metricRegistry"/>
+    </bean>
+
+    <bean id="cartQueryFactory"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.query.BaseQueryFactory">
+        <constructor-arg ref="cartTypeInfo"/>
+    </bean>
+
+    <alias name="databaseCartStorage" alias="polyglotCartStorage"/>
+    <bean id="databaseCartStorage"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.DatabaseCartStorage">
+        <constructor-arg ref="cartDataSource"/>
+        <constructor-arg ref="jsonSerializer"/>
+    </bean>
+
+    <bean id="cartTypeInfo" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.CartTypeInfo">
+        <constructor-arg ref="polyglotRepositoriesConfigProvider"/>
+    </bean>
+
+    <bean id="jsonSerializer"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.serializer.json.JsonSerializer"/>
+
+    <bean id="cartDataSource"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.DataSourceFactory">
+        <constructor-arg ref="configurationService"/>
+        <constructor-arg ref="hikariMetricRegistry"/>
+    </bean>
+
+    <bean id="threadLocalDocumentStorageCache"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.storage.cache.ThreadLocalDocumentCache"/>
+
+    <bean id="defaultDocumentStorageCache"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.storage.cache.InstrumentedStorageCache">
+        <constructor-arg ref="threadLocalDocumentStorageCache"/>
+        <constructor-arg ref="metricRegistry"/>
+        <constructor-arg value="documentCart"/>
+    </bean>
+
+    <alias name="defaultDocumentStorageCache" alias="documentCartStorageCache"/>
+
+    <bean id="cachedDocumentStorage"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.storage.CachedDocumentStorage">
+        <constructor-arg ref="documentCartStorageCache"/>
+        <constructor-arg ref="polyglotCartStorage"/>
+    </bean>
+
+
+    <bean id="documentCartRepositoryCallback"
+          class="com.sap.cxservices.rediscart.servicelayer.web.DocumentCartRepositoryCallback">
+        <constructor-arg ref="cachedDocumentStorage"/>
+    </bean>
+
+    <bean parent="listMergeDirective" depends-on="polyglotPersistenceCallbacksList">
+        <property name="add" ref="documentCartRepositoryCallback"/>
+    </bean>
+
+    <bean id="hikariMetricRegistry" class="com.codahale.metrics.MetricRegistry"/>
+
+    <bean id="hikariJmxReporter" class="de.hybris.platform.metrics.DropwizardJmxReporterFactoryBean">
+        <property name="domain" value="hikari-metrics"/>
+        <property name="metricRegistry" ref="hikariMetricRegistry"/>
+    </bean>
+
+    <bean id="defaultLocalRedisServer" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.server.LocalRedisServer" init-method="init" destroy-method="destroy">
+        <property name="enabled" value="#{configurationService.configuration.getBoolean('redis.embedded.server.enabled', false)}"/>
+        <property name="port" value="#{configurationService.configuration.getInt('redis.embedded.server.port', 6379)}"/>
+        <property name="password" value="#{configurationService.configuration.getString('redis.embedded.server.password', 'redisserver')}"/>
+    </bean>
+
+    <alias name="defaultJedisPoolConfig" alias="jedisPoolConfig"/>
+    <bean id="defaultJedisPoolConfig" class="redis.clients.jedis.JedisPoolConfig">
+        <property name="minIdle" value="#{configurationService.configuration.getInt('rediscart.storage.redis.pool.minIdle')}"/>
+        <property name="maxIdle" value="#{configurationService.configuration.getInt('rediscart.storage.redis.pool.maxIdle')}"/>
+        <property name="maxTotal" value="#{configurationService.configuration.getInt('rediscart.storage.redis.pool.maxTotal')}"/>
+    </bean>
+
+    <alias name="defaultRedisClusterConfiguration" alias="redisClusterConfiguration"/>
+    <bean id="defaultRedisClusterConfiguration" class="org.springframework.data.redis.connection.RedisClusterConfiguration">
+        <constructor-arg name="clusterNodes">
+            <list>
+                <value>#{configurationService.configuration.getProperty('rediscart.storage.redis.host')}:#{configurationService.configuration.getInt('rediscart.storage.redis.port')}</value>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <alias name="mutableJedisClientConfiguration" alias="jedisClientConfiguration"/>
+    <bean id="mutableJedisClientConfiguration" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory.MutableJedisClientConfiguration">
+        <property name="poolConfig" ref="jedisPoolConfig"/>
+        <property name="connectTimeout" value="#{T(java.time.Duration).ofMillis(configurationService.configuration.getLong('rediscart.storage.redis.client.connectionTimeout', 2000L))}"/>
+        <property name="readTimeout" value="#{T(java.time.Duration).ofMillis(configurationService.configuration.getLong('rediscart.storage.redis.client.readTimeout', 2000L))}"/>
+        <property name="clientName" value="#{configurationService.configuration.getString('rediscart.storage.redis.client.name', 'rediscart')}"/>
+        <property name="usePooling" value="#{configurationService.configuration.getBoolean('rediscart.storage.redis.use.pool', true)}"/>
+        <property name="useSsl" value="#{configurationService.configuration.getBoolean('rediscart.storage.redis.use.ssl', false)}"/>
+    </bean>
+
+    <alias alias="redisBackOffPolicy" name="defaultRedisBackOffPolicy" />
+    <bean id="defaultRedisBackOffPolicy" class="org.springframework.retry.backoff.ExponentialBackOffPolicy">
+        <property name="initialInterval" value="#{configurationService.configuration.getLong('rediscart.storage.redis.retry.backoff.period.initialInterval',2000L)}"/>
+        <property name="maxInterval" value="#{configurationService.configuration.getLong('rediscart.storage.redis.retry.backoff.period.maxInterval',10000L)}"/>
+        <property name="multiplier" value="#{configurationService.configuration.getDouble('rediscart.storage.redis.retry.backoff.period.multiplier',1.5)}"/>
+    </bean>
+
+    <alias alias="redisRetryPolicy" name="defaultRedisRetryPolicy" />
+    <bean id="defaultRedisRetryPolicy" class="org.springframework.retry.policy.SimpleRetryPolicy">
+        <constructor-arg index="0" value="#{configurationService.configuration.getInteger('rediscart.storage.redis.retry.max.attempts',5)}"/>
+        <constructor-arg index="1">
+            <map>
+                <entry key="java.lang.IllegalStateException" value="true"/>
+            </map>
+        </constructor-arg>
+    </bean>
+
+    <bean id="redisRetryTemplate" class="org.springframework.retry.support.RetryTemplate">
+        <property name="backOffPolicy" ref="redisBackOffPolicy"/>
+        <property name="retryPolicy" ref="redisRetryPolicy"/>
+    </bean>
+
+    <alias name="defaultJedisConnectionFactory" alias="jedisConnectionFactory"/>
+    <bean id="defaultJedisConnectionFactory" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.connection.ConditionalJedisConnectionFactory"
+          p:hostName="#{configurationService.configuration.getProperty('rediscart.storage.redis.host')}"
+          p:port="#{configurationService.configuration.getInt('rediscart.storage.redis.port')}"
+          p:password="#{configurationService.configuration.getProperty('rediscart.storage.redis.password')}"
+          p:clusterEnabled="#{configurationService.configuration.getBoolean('rediscart.cluster.enabled', true)}">
+        <constructor-arg name="clusterConfig" ref="redisClusterConfiguration"/>
+        <constructor-arg name="clientConfig" ref="jedisClientConfiguration"/>
+        <property name="retryTemplate" ref="redisRetryTemplate"/>
+    </bean>
+
+    <bean id="stringRedisSerializer" class="org.springframework.data.redis.serializer.StringRedisSerializer"/>
+
+
+    <bean id="defaultRedisTemplate" class="org.springframework.data.redis.core.RedisTemplate"
+          p:connectionFactory-ref="jedisConnectionFactory"
+          p:defaultSerializer-ref="stringRedisSerializer"
+          p:enableDefaultSerializer="true"/>
+
+    <alias name="defaultRedisRetryTemplate" alias="redisTemplate"/>
+    <bean id="defaultRedisRetryTemplate" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.template.RedisRetryTemplate" parent="defaultRedisTemplate">
+        <constructor-arg name="retryTemplate" ref="redisRetryTemplate"/>
+    </bean>
+
+    <util:list id="redisCartMetadataUpdateHooks" value-type="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.RedisCartMetadataUpdateHook"/>
+
+    <util:list id="redisCartMetadataSearchHooks" value-type="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.RedisCartMetadataSearchHook"/>
+
+
+    <alias name="defaultUserRedisCartMetadataUpdateHook" alias="userRedisCartMetadataUpdateHook"/>
+    <bean id="defaultUserRedisCartMetadataUpdateHook" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.impl.UserRedisCartMetadataUpdateHook">
+        <property name="modelService" ref="modelService"/>
+    </bean>
+
+    <bean depends-on="redisCartMetadataUpdateHooks" parent="listMergeDirective">
+        <property name="add" ref="userRedisCartMetadataUpdateHook" />
+    </bean>
+
+    <alias name="defaultUserRedisCartMetadataSearchHook" alias="userRedisCartMetadataSearchHook"/>
+    <bean id="defaultUserRedisCartMetadataSearchHook" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.impl.UserRedisCartMetadataSearchHook">
+        <property name="modelService" ref="modelService"/>
+    </bean>
+
+    <bean depends-on="redisCartMetadataSearchHooks" parent="listMergeDirective">
+        <property name="add" ref="userRedisCartMetadataSearchHook" />
+    </bean>
+
+    <alias name="defaultSiteRedisCartMetadataUpdateHook" alias="siteRedisCartMetadataUpdateHook"/>
+    <bean id="defaultSiteRedisCartMetadataUpdateHook" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.impl.SiteRedisCartMetadataUpdateHook">
+        <property name="modelService" ref="modelService"/>
+    </bean>
+
+    <bean depends-on="redisCartMetadataUpdateHooks" parent="listMergeDirective">
+        <property name="add" ref="siteRedisCartMetadataUpdateHook" />
+    </bean>
+
+    <alias name="defaultSiteRedisCartMetadataSearchHook" alias="siteRedisCartMetadataSearchHook"/>
+    <bean id="defaultSiteRedisCartMetadataSearchHook" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.impl.SiteRedisCartMetadataSearchHook">
+        <property name="modelService" ref="modelService" />
+    </bean>
+
+    <bean depends-on="redisCartMetadataSearchHooks" parent="listMergeDirective">
+        <property name="add" ref="siteRedisCartMetadataSearchHook" />
+    </bean>
+
+    <alias name="defaultSavedRedisCartMetadataUpdateHook" alias="savedRedisCartMetadataUpdateHook"/>
+    <bean id="defaultSavedRedisCartMetadataUpdateHook" class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.hook.impl.SavedRedisCartMetadataUpdateHook">
+        <property name="modelService" ref="modelService" />
+    </bean>
+
+    <bean depends-on="redisCartMetadataUpdateHooks" parent="listMergeDirective">
+        <property name="add" ref="savedRedisCartMetadataUpdateHook" />
+    </bean>
+
+    <alias name="defaultRedisCartHelper" alias="redisCartHelper" />
+    <bean id="defaultRedisCartHelper"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.helper.impl.DefaultRedisCartHelper">
+        <property name="redisCartMetaDao" ref="redisCartMetaDao"/>
+        <property name="modelService" ref="modelService"/>
+        <property name="hacPkAnalyzerFacade" ref="hacPkAnalyzerFacade"/>
+        <property name="redisTemplate" ref="redisTemplate"/>
+        <property name="redisCartMetadataUpdateHooks" ref="redisCartMetadataUpdateHooks" />
+        <property name="redisCartMetadataSearchHooks" ref="redisCartMetadataSearchHooks" />
+        <property name="cartToMetadataAttributesMapping" ref="cartToMetadataAttributesMapping" />
+    </bean>
+
+    <alias name="redisCartStorage" alias="polyglotCartStorage" />
+    <bean id="redisCartStorage"
+          class="com.sap.cxservices.rediscart.persistence.polyglot.repository.documentcart.cart.redis.RedisCartStorage" depends-on="databaseCartStorage">
+        <constructor-arg ref="jsonSerializer"/>
+        <property name="redisTemplate" ref="redisTemplate"/>
+        <property name="redisCartHelper" ref="redisCartHelper"/>
+        <property name="ttl" value="#{configurationService.configuration.getInt('rediscart.storage.cart.ttl', -1)}"/>
+    </bean>
+
+    <alias name="defaultRedisCartMetaGenericDao" alias="redisCartMetaDao" />
+    <bean id="defaultRedisCartMetaGenericDao" class="de.hybris.platform.servicelayer.internal.dao.DefaultGenericDao">
+        <constructor-arg name="typecode" value="RedisCartMetadata"/>
+    </bean>
+
+    <alias name="defaultRedisCartReferenceMetaGenericDao" alias="redisCartReferenceMetaDao" />
+    <bean id="defaultRedisCartReferenceMetaGenericDao" class="de.hybris.platform.servicelayer.internal.dao.DefaultGenericDao">
+        <constructor-arg name="typecode" value="RedisCartReferenceMetadata"/>
+    </bean>
+
+    <util:map id="cartToMetadataAttributesMapping" key-type="java.lang.String" value-type="java.lang.String">
+
+    </util:map>
+
+    <alias alias="commerceCartDao" name="redisCommerceCartDao"/>
+    <bean id="redisCommerceCartDao" class="com.sap.cxservices.rediscart.servicelayer.order.dao.impl.RedisCommerceCartDao" parent="defaultCommerceCartDao"/>
+
+    <alias name="redisCartEntryDao" alias="cartEntryDao"/>
+    <bean id="redisCartEntryDao" class="com.sap.cxservices.rediscart.servicelayer.order.dao.impl.RedisCartEntryDao" parent="defaultCartEntryDao"/>
+
+    <alias alias="saveCartDao" name="redisSaveCartDao"/>
+    <bean id="redisSaveCartDao" class="com.sap.cxservices.rediscart.servicelayer.order.dao.impl.RedisSaveCartDao" parent="commerceCartDao">
+        <property name="pagedFlexibleSearchService" ref="pagedFlexibleSearchService"/>
+    </bean>
+
+</beans>

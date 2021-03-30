@@ -177,6 +177,8 @@
     <extension name='cmswebservices' />
     <extension name='webservicescommons' />
     <extension name='ywebservices' />
+    <extension name='rediscart'/>
+    <extension name='rediscartmaintenance'/>
 
 <!-- Sample Extensions -->
     <extension name='spartacussampledata' />
